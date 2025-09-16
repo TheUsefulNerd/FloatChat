@@ -2,7 +2,7 @@
 MCP Client for ARGO Oceanographic Platform
 Connects to MCP server and provides tools for AI agents
 """
-
+from config.settings import load_config
 import asyncio
 import json
 import logging
@@ -88,7 +88,7 @@ class ArgoMCPClient:
             # Import here to avoid circular imports
             from database.connection import DatabaseManager
 
-            db_manager = DatabaseManager()
+            db_manager = DatabaseManager(config=load_config())
 
             if tool_name == "query_argo_profiles":
                 return await self._query_argo_profiles(db_manager, arguments)
@@ -113,7 +113,7 @@ class ArgoMCPClient:
         """Read an MCP resource"""
         try:
             from database.connection import DatabaseManager
-            db_manager = DatabaseManager()
+            db_manager = DatabaseManager(config=load_config())
 
             if uri == "argo://profiles/summary":
                 return await self._get_profiles_summary(db_manager)
@@ -229,7 +229,7 @@ class ArgoMCPClient:
             except Exception as rag_error:
                 # Fallback to simple database search
                 from database.connection import DatabaseManager
-                db_manager = DatabaseManager()
+                db_manager = DatabaseManager(config=load_config())
 
                 search_query = """
                 SELECT profile_id, float_id, date, latitude, longitude, ocean

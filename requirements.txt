@@ -1,0 +1,17 @@
+streamlit
+pandas
+numpy
+plotly
+folium
+psycopg2-binary
+sqlalchemy
+xarray
+netCDF4
+sentence-transformers
+faiss-cpu
+langchain
+python-dotenv
+bcrypt
+PyJWT
+groq
+netCDF4

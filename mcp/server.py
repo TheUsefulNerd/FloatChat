@@ -2,7 +2,7 @@
 MCP Server for ARGO Oceanographic Platform
 Provides tools and resources for AI agents to interact with oceanographic data
 """
-
+from config.settings import load_config
 import asyncio
 import json
 import logging
@@ -35,7 +35,7 @@ class ArgoMCPServer:
     
     def __init__(self):
         self.server = Server("argo-oceanographic")
-        self.db_manager = DatabaseManager()
+        self.db_manager = DatabaseManager(config=load_config())
         self.netcdf_processor = NetCDFProcessor()
         self.rag_system = None
         self.vector_store = None

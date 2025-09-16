@@ -57,175 +57,208 @@ class NetCDFProcessor:
             logger.error(f"Failed to calculate file hash: {str(e)}")
             return ""
     
+    # Replace these specific methods in your NetCDFProcessor class:
+
     def extract_profile_metadata(self, ds: xr.Dataset) -> Dict[str, Any]:
         """Extract profile-level metadata from NetCDF dataset"""
         try:
             metadata = {}
             
-            # Platform information
-            if 'PLATFORM_NUMBER' in ds.variables:
-                platform_num = ds['PLATFORM_NUMBER'].values
-                if hasattr(platform_num, 'item'):
-                    metadata['platform_number'] = str(platform_num.item())
-                else:
-                    metadata['platform_number'] = str(platform_num[0]) if len(platform_num) > 0 else ''
+            # Safe extraction helper
+            def safe_scalar_extract(var_name: str, default=None):
+                """Safely extract scalar value from potentially multi-dimensional array"""
+                if var_name not in ds.variables:
+                    return default
+                
+                try:
+                    data = ds[var_name].values
+                    # Handle different array shapes
+                    if np.isscalar(data):
+                        return data
+                    elif hasattr(data, 'item') and data.size == 1:
+                        return data.item()
+                    elif hasattr(data, '__len__') and len(data) > 0:
+                        # Flatten and get first valid value
+                        flat_data = np.array(data).flatten()
+                        valid_data = flat_data[~pd.isna(flat_data)]
+                        if len(valid_data) > 0:
+                            return valid_data[0]
+                    return default
+                except Exception as e:
+                    logger.warning(f"Error extracting {var_name}: {e}")
+                    return default
             
-            # Float ID (usually same as platform number)
-            metadata['float_id'] = metadata.get('platform_number', 'unknown')
+            # Platform information
+            platform_num = safe_scalar_extract('PLATFORM_NUMBER', '')
+            if platform_num:
+                metadata['platform_number'] = str(platform_num).strip()
+                metadata['float_id'] = str(platform_num).strip()
+            else:
+                metadata['platform_number'] = 'unknown'
+                metadata['float_id'] = 'unknown'
             
             # Cycle number
-            if 'CYCLE_NUMBER' in ds.variables:
-                cycle_num = ds['CYCLE_NUMBER'].values
-                if hasattr(cycle_num, 'item'):
-                    metadata['cycle_number'] = int(cycle_num.item())
-                else:
-                    metadata['cycle_number'] = int(cycle_num[0]) if len(cycle_num) > 0 else 0
+            cycle_num = safe_scalar_extract('CYCLE_NUMBER', 0)
+            metadata['cycle_number'] = int(cycle_num) if cycle_num is not None else 0
+            
+            # Location - handle coordinate arrays properly
+            lat = safe_scalar_extract('LATITUDE')
+            lon = safe_scalar_extract('LONGITUDE')
+            
+            if lat is not None and lon is not None:
+                metadata['latitude'] = float(lat)
+                metadata['longitude'] = float(lon)
             else:
-                metadata['cycle_number'] = 0
+                logger.warning("Missing coordinates, using defaults")
+                metadata['latitude'] = 0.0
+                metadata['longitude'] = 0.0
             
-            # Location
-            if 'LATITUDE' in ds.variables:
-                lat = ds['LATITUDE'].values
-                metadata['latitude'] = float(lat.item()) if hasattr(lat, 'item') else float(lat[0])
-            
-            if 'LONGITUDE' in ds.variables:
-                lon = ds['LONGITUDE'].values
-                metadata['longitude'] = float(lon.item()) if hasattr(lon, 'item') else float(lon[0])
-            
-            # Date/Time
-            if 'JULD' in ds.variables:
-                # ARGO uses Julian days since 1950-01-01
-                juld = ds['JULD'].values
-                if hasattr(juld, 'item'):
-                    julian_day = juld.item()
-                else:
-                    julian_day = juld[0] if len(juld) > 0 else 0
-                
-                if not np.isnan(julian_day):
+            # Date/Time handling
+            juld = safe_scalar_extract('JULD')
+            if juld is not None and not np.isnan(juld):
+                try:
                     # Convert Julian day to datetime
                     base_date = pd.Timestamp('1950-01-01')
-                    measurement_date = base_date + pd.Timedelta(days=julian_day)
+                    measurement_date = base_date + pd.Timedelta(days=float(juld))
                     metadata['measurement_date'] = measurement_date
-                else:
+                except Exception as e:
+                    logger.warning(f"Error converting JULD date: {e}")
                     metadata['measurement_date'] = datetime.now()
             else:
                 metadata['measurement_date'] = datetime.now()
             
             # Data center
-            if 'DATA_CENTRE' in ds.variables or 'DATA_CENTER' in ds.variables:
-                dc_var = 'DATA_CENTRE' if 'DATA_CENTRE' in ds.variables else 'DATA_CENTER'
-                dc = ds[dc_var].values
-                if hasattr(dc, 'item'):
-                    metadata['data_center'] = str(dc.item())
-                else:
-                    metadata['data_center'] = str(dc[0]) if len(dc) > 0 else 'unknown'
-            else:
-                metadata['data_center'] = 'unknown'
+            data_center = (safe_scalar_extract('DATA_CENTRE') or 
+                        safe_scalar_extract('DATA_CENTER') or 
+                        'unknown')
+            metadata['data_center'] = str(data_center).strip()
             
+            logger.info(f"Extracted metadata keys: {list(metadata.keys())}")
             return metadata
             
         except Exception as e:
             logger.error(f"Failed to extract profile metadata: {str(e)}")
-            return {}
-    
+            return {
+                'platform_number': 'unknown',
+                'float_id': 'unknown',
+                'cycle_number': 0,
+                'latitude': 0.0,
+                'longitude': 0.0,
+                'measurement_date': datetime.now(),
+                'data_center': 'unknown'
+            }
+
     def extract_measurements(self, ds: xr.Dataset) -> List[Dict[str, Any]]:
-        """Extract measurement data from NetCDF dataset"""
-        try:
-            measurements = []
-            
-            # Get the number of levels
-            if 'N_LEVELS' in ds.dims:
-                n_levels = ds.dims['N_LEVELS']
-            elif 'PRES' in ds.variables:
-                n_levels = len(ds['PRES'].values)
-            else:
-                logger.error("Cannot determine number of measurement levels")
-                return []
-            
-            # Extract measurement arrays
-            variables = {}
-            
-            # Pressure (required)
-            if 'PRES' in ds.variables:
-                variables['pressure'] = ds['PRES'].values
-            else:
-                logger.error("PRES variable not found")
-                return []
-            
-            # Temperature (required)
-            if 'TEMP' in ds.variables:
-                variables['temperature'] = ds['TEMP'].values
-            else:
-                logger.error("TEMP variable not found")
-                return []
-            
-            # Salinity (required)
-            if 'PSAL' in ds.variables:
-                variables['salinity'] = ds['PSAL'].values
-            else:
-                logger.error("PSAL variable not found")
-                return []
-            
-            # Optional BGC parameters
-            if 'DOXY' in ds.variables:
-                variables['oxygen'] = ds['DOXY'].values
-            
-            if 'NITRATE' in ds.variables:
-                variables['nitrate'] = ds['NITRATE'].values
-            
-            if 'PH_IN_SITU_TOTAL' in ds.variables:
-                variables['ph'] = ds['PH_IN_SITU_TOTAL'].values
-            
-            if 'CHLA' in ds.variables:
-                variables['chlorophyll'] = ds['CHLA'].values
-            
-            # Quality flags
-            quality_flags = {}
-            for param in ['PRES', 'TEMP', 'PSAL', 'DOXY', 'NITRATE', 'PH_IN_SITU_TOTAL', 'CHLA']:
-                qc_var = f"{param}_QC"
-                if qc_var in ds.variables:
-                    quality_flags[param] = ds[qc_var].values
-            
-            # Build measurements list
-            for i in range(n_levels):
-                measurement = {}
+            """Extract measurement data from NetCDF dataset"""
+            try:
+                measurements = []
                 
-                # Extract values for this level
-                for var_name, var_data in variables.items():
-                    if i < len(var_data):
-                        value = var_data[i]
-                        if not np.isnan(value) and not np.isinf(value):
-                            measurement[var_name] = float(value)
-                        else:
-                            measurement[var_name] = None
-                    else:
-                        measurement[var_name] = None
+                # Get the number of levels - FIX THE DIMS WARNING
+                n_levels = None
+                if 'N_LEVELS' in ds.sizes:  # Use .sizes instead of .dims
+                    n_levels = ds.sizes['N_LEVELS']
+                elif 'N_PROF' in ds.sizes:
+                    n_levels = ds.sizes['N_PROF']
+                elif 'PRES' in ds.variables:
+                    pres_data = ds['PRES'].values
+                    n_levels = len(pres_data) if hasattr(pres_data, '__len__') else 1
+                else:
+                    logger.error("Cannot determine number of measurement levels")
+                    return []
                 
-                # Calculate depth from pressure (approximation)
-                if measurement.get('pressure') is not None:
-                    # Simple approximation: depth ≈ pressure (in meters)
-                    measurement['depth'] = measurement['pressure']
+                logger.info(f"Processing {n_levels} measurement levels")
                 
-                # Set quality flag (use pressure QC as default)
-                qc_flag = 1  # Default to good data
-                if 'PRES' in quality_flags and i < len(quality_flags['PRES']):
+                # Safe array extraction
+                def safe_array_extract(var_name: str):
+                    """Safely extract array data"""
+                    if var_name not in ds.variables:
+                        return None
                     try:
-                        qc_flag = int(quality_flags['PRES'][i])
-                    except (ValueError, TypeError):
-                        qc_flag = 1
+                        data = ds[var_name].values
+                        # Ensure it's a 1D array
+                        if data.ndim > 1:
+                            data = data.flatten()
+                        return data
+                    except Exception as e:
+                        logger.warning(f"Error extracting array {var_name}: {e}")
+                        return None
                 
-                measurement['quality_flag'] = qc_flag
+                # Extract measurement arrays
+                variables = {}
                 
-                # Validate measurement
-                if validate_measurement_data(measurement):
-                    measurements.append(measurement)
-            
-            logger.info(f"Extracted {len(measurements)} valid measurements")
-            return measurements
-            
-        except Exception as e:
-            logger.error(f"Failed to extract measurements: {str(e)}")
-            return []
+                # Core variables
+                core_vars = {
+                    'pressure': ['PRES', 'PRES_ADJUSTED'],
+                    'temperature': ['TEMP', 'TEMP_ADJUSTED'], 
+                    'salinity': ['PSAL', 'PSAL_ADJUSTED']
+                }
+                
+                # BGC variables
+                bgc_vars = {
+                    'oxygen': ['DOXY', 'DOXY_ADJUSTED'],
+                    'nitrate': ['NITRATE', 'NITRATE_ADJUSTED'],
+                    'ph': ['PH_IN_SITU_TOTAL', 'PH_IN_SITU_TOTAL_ADJUSTED'],
+                    'chlorophyll': ['CHLA', 'CHLA_ADJUSTED']
+                }
+                
+                all_vars = {**core_vars, **bgc_vars}
+                
+                # Extract available variables
+                for param_name, var_candidates in all_vars.items():
+                    for var_name in var_candidates:
+                        data = safe_array_extract(var_name)
+                        if data is not None:
+                            variables[param_name] = data
+                            logger.info(f"Found {var_name} -> {param_name}")
+                            break
+                
+                # Check if we have minimum required variables
+                if not all(param in variables for param in ['pressure', 'temperature', 'salinity']):
+                    logger.error("Missing required core variables (pressure, temperature, salinity)")
+                    return []
+                
+                # Build measurements list
+                max_length = max(len(v) for v in variables.values())
+                actual_levels = min(n_levels, max_length)
+                
+                for i in range(actual_levels):
+                    measurement = {}
+                    
+                    # Extract values for this level
+                    for param_name, param_data in variables.items():
+                        if i < len(param_data):
+                            value = param_data[i]
+                            # Check for valid data
+                            if (not np.isnan(value) and not np.isinf(value) and 
+                                value != -999 and value != 99999):  # Common missing value flags
+                                measurement[param_name] = float(value)
+                            else:
+                                measurement[param_name] = None
+                        else:
+                            measurement[param_name] = None
+                    
+                    # Calculate depth from pressure if available
+                    if measurement.get('pressure') is not None:
+                        measurement['depth'] = measurement['pressure']  # Simple approximation
+                    else:
+                        measurement['depth'] = None
+                    
+                    # Set quality flag
+                    measurement['quality_flag'] = 1  # Default to good data
+                    
+                    # Only add if measurement has at least one valid parameter
+                    valid_params = [v for v in measurement.values() 
+                                if isinstance(v, (int, float)) and v is not None]
+                    if valid_params:
+                        measurements.append(measurement)
+                
+                logger.info(f"Extracted {len(measurements)} valid measurements")
+                return measurements
+                
+            except Exception as e:
+                logger.error(f"Failed to extract measurements: {str(e)}")
+                logger.error(f"Dataset variables: {list(ds.variables.keys())}")
+                return []
     
     def process_file(self, file_path: str) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
         """
