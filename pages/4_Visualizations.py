@@ -237,13 +237,13 @@ def main():
                                     depth_fig = st.session_state.plotter.create_depth_profile(
                                         measurements, selected_params, title
                                     )
-                                    st.plotly_chart(depth_fig, use_container_width=True)
+                                    st.plotly_chart(depth_fig, width=True)
                                 
                                 # T-S Diagram
                                 if 'temperature' in measurements.columns and 'salinity' in measurements.columns:
                                     st.subheader("Temperature-Salinity Diagram")
                                     ts_fig = st.session_state.plotter.create_ts_diagram(measurements)
-                                    st.plotly_chart(ts_fig, use_container_width=True)
+                                    st.plotly_chart(ts_fig, width=True)
                                 
                                 # Parameter distributions
                                 st.subheader("Parameter Distributions")
@@ -254,7 +254,7 @@ def main():
                                 )
                                 
                                 hist_fig = st.session_state.plotter.create_histogram(measurements, param_for_hist)
-                                st.plotly_chart(hist_fig, use_container_width=True)
+                                st.plotly_chart(hist_fig, width=True)
                                 
                                 # Parameter comparison
                                 if len(available_params) >= 2:
@@ -271,7 +271,7 @@ def main():
                                         comparison_fig = st.session_state.plotter.create_parameter_comparison(
                                             measurements, param1, param2
                                         )
-                                        st.plotly_chart(comparison_fig, use_container_width=True)
+                                        st.plotly_chart(comparison_fig, width=True)
                             else:
                                 st.warning("No suitable parameters found for visualization.")
                         else:
@@ -497,7 +497,7 @@ def main():
                                 
                                 # Overall time series
                                 ts_fig = st.session_state.plotter.create_time_series(time_series_df, selected_param)
-                                st.plotly_chart(ts_fig, use_container_width=True)
+                                st.plotly_chart(ts_fig, width=True)
                                 
                                 # Time series by float
                                 if len(time_series_df['float_id'].unique()) > 1:
@@ -520,7 +520,7 @@ def main():
                                             color='float_id',
                                             title=f"{selected_param.title()} Time Series by Float"
                                         )
-                                        st.plotly_chart(fig, use_container_width=True)
+                                        st.plotly_chart(fig, width=True)
                             else:
                                 st.warning(f"No valid time series data found for {selected_param}.")
                         else:
@@ -579,7 +579,7 @@ def main():
                             comparison_fig = st.session_state.plotter.create_parameter_comparison(
                                 all_measurements, param1, param2
                             )
-                            st.plotly_chart(comparison_fig, use_container_width=True)
+                            st.plotly_chart(comparison_fig, width=True)
                             
                             # Correlation analysis
                             correlation = all_measurements[[param1, param2]].corr().iloc[0, 1]
@@ -683,7 +683,7 @@ def main():
                             # Distribution histogram
                             st.subheader("Distribution Analysis")
                             hist_fig = st.session_state.plotter.create_histogram(all_measurements, selected_param)
-                            st.plotly_chart(hist_fig, use_container_width=True)
+                            st.plotly_chart(hist_fig, width=True)
                             
                             # Quantile analysis
                             st.subheader("Quantile Analysis")

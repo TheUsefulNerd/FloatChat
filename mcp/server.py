@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 from typing import Any, Dict, List, Optional
+from config.settings import load_config
 from mcp.server import Server
 from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
@@ -35,7 +36,7 @@ class ArgoMCPServer:
     
     def __init__(self):
         self.server = Server("argo-oceanographic")
-        self.db_manager = DatabaseManager()
+        self.db_manager = DatabaseManager(config)
         self.netcdf_processor = NetCDFProcessor()
         self.rag_system = None
         self.vector_store = None

@@ -1,7 +1,9 @@
 import streamlit as st
 import sys
 import os
-
+from dotenv import load_dotenv
+from config.settings import load_config
+load_dotenv()
 # Add the current directory to the Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
